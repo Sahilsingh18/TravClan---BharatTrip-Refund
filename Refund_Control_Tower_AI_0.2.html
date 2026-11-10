@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Refund Control Tower (AI mode)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b2430;--mut:#667085;--ac:#1f5fbf;--bd:#d9dee6;--bad:#c0362c;--ok:#1d7a46;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root:not([data-theme="light"]){}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161c;--card:#1b2129;--tx:#e8ecf2;--mut:#98a2b3;--ac:#6aa3f5;--bd:#2d3643;--bad:#ff7b70;--ok:#5fd18c}}
+:root[data-theme="dark"]{--bg:#12161c;--card:#1b2129;--tx:#e8ecf2;--mut:#98a2b3;--ac:#6aa3f5;--bd:#2d3643;--bad:#ff7b70;--ok:#5fd18c}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:14px}
+h1{font-size:22px;margin:4px 0}h2{font-size:16px;margin:18px 0 8px}p.s{color:var(--mut);margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:12px}
+.drop{border:2px dashed var(--bd);text-align:center;padding:22px}
+button,select,textarea,input[type=password],input[type=text]{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 12px}
+button.p{background:var(--ac);color:#fff;border-color:var(--ac)}button{cursor:pointer}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.k b{display:block;font-size:24px}.k span{color:var(--mut);font-size:12px}
+.sc{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid var(--bd);padding:5px 8px;text-align:left;white-space:nowrap}th{color:var(--mut);font-weight:600}
+.bar{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:13px}.bar i{display:block;height:14px;border-radius:3px;background:var(--ac)}.bar i.e{background:var(--bad)}.bar span:first-child{width:62px;color:var(--mut)}
+textarea{width:100%;min-height:90px}.warn{color:var(--bad)}.ok{color:var(--ok)}pre{white-space:pre-wrap;background:var(--bg);padding:10px;border-radius:8px;border:1px solid var(--bd)}
+.hide{display:none}
+</style></head><body><main>
+<h1>Refund Control Tower</h1>
+<p class="s">Upload the BharatTrip refund workbook. Everything runs in your browser; the file is not uploaded anywhere.</p>
+<div class="card drop"><input type="file" id="f" accept=".xlsx,.xls"><div id="msg" class="s" style="margin-top:8px">Needs the tabs Support_Tracker, Finance_Tracker and Escalations.</div></div>
+<div class="card"><b>AI mode (optional)</b> <span class="s">Use this downloaded file, not a hosted link. Your key stays in this page and goes only to the provider you choose. Leave it blank to use the built-in rules.</span>
+<p><select id="opv"><option value="openrouter">OpenRouter</option><option value="claude">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option><option value="groq">Groq (free)</option><option value="mistral">Mistral (free)</option></select></p>
+<p><input id="ork" type="password" placeholder="Paste your API key here" style="width:100%;max-width:440px"></p>
+<p><input id="orm" type="text" list="orl" style="width:100%;max-width:440px"><datalist id="orl"></datalist> <span class="s" id="orh"></span></p><p class="s" id="ost"></p><p><button id="otb">Test connection</button> <button id="olb">Load available models</button></p><div id="otc" class="s"></div></div>
+<div id="app" class="hide">
+<div class="tabs" id="tabs"></div><div id="view"></div></div>
+</main>
+<script>
+//CORE_START
+const norm=s=>{const m=String(s==null?'':s).match(/(\d{3,5})/);return m?'RF-'+m[1]:null};
+function pdt(v){if(v==null||v==='')return null;
+ if(v instanceof Date){const d=new Date(v.getTime()+43200000);return Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())}
+ if(typeof v==='number'&&v>30000)return Date.UTC(1899,11,30)+Math.round(v)*864e5;
+ const s=String(v).trim();let m;
+ if(m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})/)){let y=+m[3];if(y<100)y+=2000;return Date.UTC(y,+m[2]-1,+m[1])}
+ if(m=s.match(/^(\d{4})-(\d{2})-(\d{2})/))return Date.UTC(+m[1],+m[2]-1,+m[3]);
+ const t=Date.parse(s+' UTC');return isNaN(t)?null:t}
+const agN=s=>s==null?null:String(s).replace(/\s+/g,' ').trim().toLowerCase().replace(/(^|[^a-z])([a-z])/g,(a,b,c)=>b+c.toUpperCase());
+const num=v=>{if(v==null||v==='')return null;const n=Number(String(v).replace(/,/g,''));return isNaN(n)?null:n};
+const LAB={A:'A. Support closed, Finance has NO record',B:'B. Support closed, Finance pending payout',C:'C. Support closed, Finance declined',D:'D. Both done, amount mismatch',E:'E. Healthy (both done, amounts agree)',F:'F. In Finance only (no Support ticket)',G:'G. Open or ineligible in Support, not in Finance (normal)',H:'H. Open or ineligible on one side (in progress)'};
+const mon=t=>t==null?null:new Date(t).toISOString().slice(0,7);
+function theme(t){t=String(t||'').toLowerCase();
+ if(t.includes('no record'))return 'Closed in Support, Finance has no record';
+ if(t.includes('not credited')||t.includes('money not'))return 'Support says done, agent says not paid';
+ if(t.includes('reference')||t.includes('ticket number')||t.includes('ignored'))return 'No reference / request never logged';
+ return 'No response / status chasing'}
+function analyse(wb){
+ const rd=n=>{const ws=wb.Sheets[n];if(!ws)throw new Error('Missing sheet: '+n);return XLSX.utils.sheet_to_json(ws,{defval:null})};
+ const last=(arr,k)=>{const m=new Map();arr.slice().sort((a,b)=>(a[k]==null?-1:a[k])-(b[k]==null?-1:b[k])).forEach(r=>m.set(r.id,r));return[...m.values()]};
+ const S0=rd('Support_Tracker').map(r=>({id:norm(r['Ticket ID']),agent:agN(r['Agent']),route:r['Route'],s_amt:num(r['Refund Amount (INR)']),req:pdt(r['Request Date']),upd:pdt(r['Last Updated']),s_status:String(r['Status']==null?'':r['Status']).trim(),handler:r['Handled By'],channel:r['Channel'],notes:r['Notes']})).filter(r=>r.id);
+ const F0=rd('Finance_Tracker').map(r=>({id:norm(r['Ref No']),agent:agN(r['Agent Name']),sector:r['Sector'],f_paid:num(r['Amount Paid (INR)']),f_ded:num(r['Deduction (INR)']),f_recv:pdt(r['Received On']),proc:pdt(r['Processed On']),f_status:String(r['Payout Status']==null?'':r['Payout Status']).trim(),approver:r['Approved By'],f_rem:r['Remarks']})).filter(r=>r.id);
+ const E0=rd('Escalations').map(r=>({eid:r['Escalation ID'],id:norm(r['Related Ticket / Ref']),raised:pdt(r['Raised On']),agent:agN(r['Agent / Team']),channel:r['Channel'],complaint:r['Complaint'],status:String(r['Status']==null?'':r['Status']).trim(),days:num(r['Days Open'])}));
+ const S=last(S0,'upd'),F=last(F0,'proc');
+ const sm=new Map(S.map(r=>[r.id,r])),fm=new Map(F.map(r=>[r.id,r]));
+ const ids=[...new Set([...sm.keys(),...fm.keys()])];
+ let snap=0;ids.forEach(i=>{const s=sm.get(i),f=fm.get(i);[s&&s.req,f&&f.f_recv].forEach(t=>{if(t&&t>snap)snap=t})});
+ const M=ids.map(id=>{const s=sm.get(id),f=fm.get(id);let c;
+  if(!s)c='F';else if(!f)c=s.s_status==='Closed'?'A':'G';
+  else if(s.s_status==='Closed'){if(f.f_status==='Pending Payout')c='B';else if(f.f_status==='Declined')c='C';
+   else if(f.f_status==='Refund Done'){c='E';if(s.s_amt!=null&&f.f_paid!=null){const g=s.s_amt-f.f_paid,d=f.f_ded||0;if(Math.abs(g)>1&&Math.abs(g-d)>1)c='D'}}else c='H'}
+  else c='H';
+  const st=(s&&s.req)||(f&&f.f_recv);
+  return{id,agent:(s&&s.agent)||(f&&f.agent),route:(s&&s.route)||(f&&f.sector),s_amt:s?s.s_amt:null,f_paid:f?f.f_paid:null,f_ded:f?f.f_ded:null,s_status:s?s.s_status:'',f_status:f?f.f_status:'',handler:s?s.handler:null,channel:s?s.channel:null,req:s?s.req:null,f_proc:f?f.proc:null,approver:f?f.approver:null,notes:s?s.notes:null,f_rem:f?f.f_rem:null,cat:c,category:LAB[c],age:st?Math.round((snap-st)/864e5):null}});
+ const mm=new Map(M.map(r=>[r.id,r]));
+ const E=E0.map(e=>{const m=e.id?mm.get(e.id):null;return{...e,cat:!e.id?'X':!m?'Y':m.cat,category:!e.id?'X. No ref given (informal or unlogged)':!m?'Y. Ref not found in either tracker':m.category,theme:theme(e.complaint)}});
+ const ec=new Map();E.forEach(e=>{if(e.id&&mm.has(e.id))ec.set(e.id,(ec.get(e.id)||0)+1)});
+ const W={A:3,B:2,C:2,D:2,F:2,H:1},OW={A:'Support + Finance',B:'Finance',C:'Support',D:'Finance',F:'Support',H:'Support'};
+ const AC={A:'Re-verify payout with Finance; log it there or reopen the ticket',B:'Finance to release or reject; Support to update the agent',C:'Tell the agent it was declined and why; fix the Closed status',D:'Confirm the correct amount between teams',F:'Create the missing Support ticket and contact the agent',H:'Give the agent a status update; check for a blocker'};
+ const chase=M.filter(r=>['A','B','C','D','F'].includes(r.cat)||(r.cat==='H'&&r.age>=14)).map(r=>{const amt=r.s_amt!=null?r.s_amt:(r.f_paid||0),n=ec.get(r.id)||0;
+  return{priority:+(Math.max(r.age||0,0)/10+amt/1e4+W[r.cat]+2*n).toFixed(1),id:r.id,agent:r.agent,route:r.route,amount:amt,age_days:r.age,category:r.category,escalations:n,handler:r.handler,owner:OW[r.cat],next_action:AC[r.cat]}}).sort((a,b)=>b.priority-a.priority||(a.id<b.id?-1:1));
+ const cnt=(a,f)=>a.filter(f).length,ghost=M.filter(r=>r.cat==='A');
+ const vol={},esc={};M.forEach(r=>{const k=mon(r.req);if(k)vol[k]=(vol[k]||0)+1});E.forEach(e=>{const k=mon(e.raised);if(k)esc[k]=(esc[k]||0)+1});
+ return{M,E,chase,vol,esc,snap,dq:{support_rows:S0.length,support_unique:S.length,finance_rows:F0.length,finance_unique:F.length},
+  sum:{n:M.length,healthy:cnt(M,r=>r.cat==='E'),ghost:ghost.length,ghostInr:ghost.reduce((a,r)=>a+(r.s_amt||0),0),closedNoPay:cnt(M,r=>['A','B','C'].includes(r.cat)),eTot:E.length,eOpen:cnt(E,e=>e.status==='Open'),eNoRef:cnt(E,e=>!e.id)}}}
+//CORE_END
+const OAI={openrouter:'https://openrouter.ai/api/v1/chat/completions',groq:'https://api.groq.com/openai/v1/chat/completions',mistral:'https://api.mistral.ai/v1/chat/completions'};
+const PV={groq:{n:'Groq',m:'llama-3.3-70b-versatile',t:'Free tier, fast. Get a key at console.groq.com/keys. Groq says it does not train on API data.'},mistral:{n:'Mistral',m:'mistral-small-latest',t:'Free mode, no card. Get a key at console.mistral.ai. Free-tier data may be used for training unless you opt out.'},openrouter:{n:'OpenRouter',m:'openrouter/free',t:'Free models end in :free (see openrouter.ai/models). Free plans allow about 50 requests a day.'},claude:{n:'Claude',m:'claude-sonnet-5-5',t:'Any Claude model name from your Anthropic account (for example a Haiku model for lower cost).'},gemini:{n:'Gemini',m:'gemini-3.8-flash',t:'Any current Gemini model name from Google AI Studio. Google retires old names, so if you see a model error, use the name it suggests.'}};
+const prov=()=>document.getElementById('opv').value,curModel=()=>document.getElementById('orm').value.trim()||PV[prov()].m;
+const aiOn=()=>document.getElementById('ork').value.trim().length>10;
+function aiNote(){const e=document.getElementById('aim'),s=document.getElementById('ost');const t=aiOn()?'AI mode is ON ('+PV[prov()].n+', '+curModel()+'). The AI reads messages and writes replies; the built-in rules are the fallback.':'No API key entered, so the built-in rules are used. Paste a key at the top of the page to turn AI on.';if(e)e.textContent=t;if(s)s.textContent=t}
+function setProv(){const p=PV[prov()];document.getElementById('orm').value=p.m;document.getElementById('orh').textContent=p.t;aiNote()}
+const healed={};
+async function loadModels(){const p=prov(),k=document.getElementById('ork').value.trim();let url,hd;
+ if(p==='claude'){url='https://api.anthropic.com/v1/models?limit=100';hd={'x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}}
+ else if(p==='gemini'){url='https://generativelanguage.googleapis.com/v1beta/models?pageSize=200';hd={'x-goog-api-key':k}}
+ else{url={openrouter:'https://openrouter.ai/api/v1/models',groq:'https://api.groq.com/openai/v1/models',mistral:'https://api.mistral.ai/v1/models'}[p];hd={'Authorization':'Bearer '+k}}
+ const r=await fetch(url,{headers:hd}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error((j.error&&(j.error.message||j.error))||('HTTP '+r.status));
+ const arr=j.data||j.models||[];let ids=p==='gemini'?arr.filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')).map(m=>String(m.name).replace('models/','')):arr.map(m=>m.id);
+ if(p==='openrouter')ids=['openrouter/free'].concat(ids.filter(i=>/:free$/.test(i)));
+ if(p==='groq')ids=ids.filter(i=>!/whisper|tts|guard|embed|orpheus|playai|safeguard/i.test(i));
+ if(p==='gemini')ids=ids.filter(i=>!/embed|image|tts|imagen|veo|live|audio|aqa|robotics|vision/i.test(i));
+ if(p==='mistral')ids=ids.filter(i=>!/embed|ocr|moderation|voxtral|codestral-embed/i.test(i));
+ if(!ids.length)throw new Error('No usable models were returned for this key');
+ const pref={groq:[/llama-3\.3-70b/,/gpt-oss-120b/,/gpt-oss-20b/,/llama-3\.1-8b/,/qwen/,/llama/],mistral:[/^mistral-small-latest$/,/^mistral-medium-latest$/,/small/,/medium/],claude:[/haiku/,/sonnet/],gemini:[/^gemini-[\d.]+-flash$/,/flash(?!.*lite)/,/flash/],openrouter:[/^openrouter\/free$/]}[p]||[];
+ let pick=ids[0];for(const re of pref){let c=ids.filter(i=>re.test(i));if(p==='gemini')c.sort((a,b)=>parseFloat((b.match(/[\d.]+/)||[0])[0])-parseFloat((a.match(/[\d.]+/)||[0])[0]));if(c.length){pick=c[0];break}}
+ document.getElementById('orl').innerHTML=ids.map(i=>'<option value="'+i.replace(/"/g,'')+'">').join('');document.getElementById('orm').value=pick;aiNote();return{pick,ids}}
+async function aiChat(sys,user,max){for(let i=0;;i++){try{return await aiChat0(sys,user,max)}catch(e){
+ if(!(e instanceof TypeError)&&!healed[prov()]&&/does not exist|do not have access|not found|no longer available|decommission|deprecated|404/i.test(e.message)){healed[prov()]=true;try{await loadModels();continue}catch(e2){throw new Error(e.message+' (could not load the model list: '+e2.message+')')}}if(e instanceof TypeError)throw new Error('Could not reach '+PV[prov()].n+' ('+e.message+'). Click Test connection to find out why.');if(i<3&&/high demand|overloaded|unavailable|503|try again later/i.test(e.message)){await new Promise(r=>setTimeout(r,4000*(i+1)));continue}throw e}}}
+async function aiChat0(sys,user,max){const k=document.getElementById('ork').value.trim(),m=curModel(),p=prov(),mx=max||700;let r,j,c;
+ if(p==='claude'){r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true','content-type':'application/json'},body:JSON.stringify({model:m,max_tokens:mx,temperature:0,system:sys,messages:[{role:'user',content:user}]})});j=await r.json().catch(()=>({}));c=j.content&&j.content[0]&&j.content[0].text}
+ else if(p==='gemini'){r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(m)+':generateContent',{method:'POST',headers:{'x-goog-api-key':k,'Content-Type':'application/json'},body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:user}]}],generationConfig:{temperature:0,maxOutputTokens:mx}})});j=await r.json().catch(()=>({}));c=j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts&&j.candidates[0].content.parts.map(x=>x.text||'').join('')}
+ else{r=await fetch(OAI[p],{method:'POST',headers:{'Authorization':'Bearer '+k,'Content-Type':'application/json'},body:JSON.stringify({model:m,temperature:0,max_tokens:mx,messages:[{role:'system',content:sys},{role:'user',content:user}]})});j=await r.json().catch(()=>({}));c=j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content}
+ if(!r.ok)throw new Error((j.error&&(j.error.message||j.error))||('HTTP '+r.status));if(!c)throw new Error('Empty reply from the model');return String(c)}
+const jp=t=>{const m=String(t).match(/[\[{][\s\S]*[\]}]/);if(!m)throw new Error('Model did not return JSON');return JSON.parse(m[0])};
+const THEMES=['Closed in Support but not paid','No reference or never logged','No response or status chasing','Wrong or short amount','Slow beyond normal','Other'];
+async function aiClassify(texts){const out=[];for(let i=0;i<texts.length;i+=50){const ch=texts.slice(i,i+50);
+ const a=jp(await aiChat('You label refund complaints from travel agents (English or Hinglish). Use exactly one label per complaint from: '+JSON.stringify(THEMES)+'. Return ONLY a JSON array of label strings, same length and order as the input. No other text.',JSON.stringify(ch),1500));
+ if(!Array.isArray(a)||a.length!==ch.length)throw new Error('Model returned '+(Array.isArray(a)?a.length:0)+' labels for '+ch.length+' complaints');out.push(...a.map(x=>THEMES.includes(x)?x:'Other'))}return out}
+const $=id=>document.getElementById(id);let R=null,tab='Overview';
+const X=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fd=t=>t==null?'':new Date(t).toISOString().slice(0,10);
+function table(cols,rows,max){const r=rows.slice(0,max||200);return '<div class="sc"><table><tr>'+cols.map(c=>'<th>'+X(c[1])+'</th>').join('')+'</tr>'+r.map(x=>'<tr>'+cols.map(c=>'<td>'+X(c[2]?c[2](x[c[0]]):x[c[0]])+'</td>').join('')+'</tr>').join('')+'</table></div>'+(rows.length>r.length?'<p class="s">Showing '+r.length+' of '+rows.length+'. Download for all.</p>':'')}
+function csv(name,rows){if(!rows.length)return;const k=Object.keys(rows[0]),q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+ const b=new Blob([[k.join(',')].concat(rows.map(r=>k.map(c=>q(r[c])).join(','))).join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click()}
+const TABS=['Overview','Reconciliation','Escalations','Chase list','Intake agent'];
+function draw(){$('tabs').innerHTML=TABS.map(t=>'<button class="'+(t===tab?'on':'')+'" data-t="'+t+'">'+t+'</button>').join('');
+ $('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;draw()});
+ const v=$('view'),s=R.sum;
+ if(tab==='Overview'){const ms=[...new Set([...Object.keys(R.vol),...Object.keys(R.esc)])].sort(),mx=Math.max(1,...ms.map(m=>Math.max(R.vol[m]||0,R.esc[m]||0)));
+  v.innerHTML='<div class="kpis">'+[[s.n,'Unique refunds'],[(100*s.healthy/s.n).toFixed(0)+'%','Trackers agree (healthy)'],[s.ghost,'Closed, no Finance record (INR '+(s.ghostInr/1e5).toFixed(1)+' lakh)'],[s.closedNoPay,'Closed but not paid (A+B+C)'],[s.eTot+' ('+s.eOpen+' open)','Escalations'],[s.eNoRef,'Escalations with no ref']].map(k=>'<div class="card k"><b>'+k[0]+'</b><span>'+X(k[1])+'</span></div>').join('')+'</div>'+
+  '<div class="card"><h2>Refund requests vs escalations raised, by month</h2>'+ms.map(m=>'<div class="bar"><span>'+m+'</span><i style="width:'+((R.vol[m]||0)/mx*55)+'%"></i><span>'+(R.vol[m]||0)+' refunds</span></div><div class="bar"><span></span><i class="e" style="width:'+((R.esc[m]||0)/mx*55)+'%"></i><span>'+(R.esc[m]||0)+' escalations</span></div>').join('')+'<p class="s">The escalation log may start later than the refund data, so early months can show zero.</p></div>'+
+  '<div class="card"><h2>Data cleaning</h2><p class="s">Support: '+R.dq.support_rows+' rows to '+R.dq.support_unique+' unique refunds. Finance: '+R.dq.finance_rows+' rows to '+R.dq.finance_unique+' unique. Duplicate IDs: latest update wins. Snapshot date: '+fd(R.snap)+'.</p></div>'}
+ if(tab==='Reconciliation'){const cs=Object.keys(LAB);v.innerHTML='<div class="card"><h2>Support vs Finance</h2>'+table([['k','Category'],['n','Refunds']],cs.map(c=>({k:LAB[c],n:R.M.filter(r=>r.cat===c).length})))+'</div><div class="card"><select id="cs">'+cs.map(c=>'<option value="'+c+'">'+X(LAB[c])+'</option>').join('')+'</select> <button id="dl">Download all (CSV)</button><div id="cv"></div></div>';
+  const sh=()=>{$('cv').innerHTML=table([['id','ID'],['agent','Agent'],['route','Route'],['s_amt','Support amt'],['f_paid','Paid'],['f_ded','Deduction'],['s_status','Support'],['f_status','Finance'],['handler','Handler'],['age','Age (d)'],['notes','Support note']],R.M.filter(r=>r.cat===$('cs').value))};
+  $('cs').onchange=sh;sh();$('dl').onclick=()=>csv('reconciliation.csv',R.M)}
+ if(tab==='Escalations'){const g={};R.E.forEach(e=>{const o=g[e.category]||(g[e.category]={category:e.category,n:0,open:0,d:0});o.n++;if(e.status==='Open')o.open++;o.d+=e.days||0});
+  const th={};R.E.forEach(e=>th[e.theme]=(th[e.theme]||0)+1);
+  v.innerHTML='<div class="card"><h2>AI complaint classification</h2><p class="s">Reads each complaint and labels the real reason (better than keywords, handles Hinglish). One or a few requests in total.</p><button id="cl" class="p">Classify complaints with AI</button> <span id="cls" class="s"></span>'+(R.ai?table([["t","AI theme"],["n","Count"]],Object.entries(R.ai.cnt).map(a=>({t:a[0],n:a[1]})))+'<p class="s">Labelled by '+X(R.ai.model)+'. AI output: spot-check a few.</p>':'')+'</div><div class="card"><h2>What each escalation traces back to</h2>'+table([['category','Category'],['n','Escalations'],['open','Open'],['avg','Avg days open']],Object.values(g).sort((a,b)=>a.category<b.category?-1:1).map(o=>({...o,avg:(o.d/o.n).toFixed(1)})))+'</div><div class="card"><h2>Complaint themes (keyword based)</h2>'+table([['t','Theme'],['n','Count']],Object.entries(th).map(a=>({t:a[0],n:a[1]})))+'</div><div class="card"><h2>All escalations</h2>'+table([['eid','ID'],['raised','Raised',fd],['id','Ref'],['agent','Agent'],['complaint','Complaint'],['status','Status'],['days','Days open'],['category','Category']],R.E,150)+'</div>';
+  $('cl').onclick=async()=>{if(!aiOn()){$('cls').innerHTML='<span class="warn">Add your API key above first.</span>';return}$('cls').textContent='Working...';
+   try{const u=[...new Set(R.E.map(e=>String(e.complaint||'')))],lab=await aiClassify(u),mp=new Map(u.map((x,i)=>[x,lab[i]])),cnt={};R.E.forEach(e=>{const l=mp.get(String(e.complaint||''));cnt[l]=(cnt[l]||0)+1});R.ai={cnt,model:PV[prov()].n+' '+curModel()};draw()}catch(err){$('cls').innerHTML='<span class="warn">AI failed: '+X(err.message)+'. The keyword themes below are still valid.</span>'}}}
+ if(tab==='Chase list'){v.innerHTML='<div class="card"><h2>Prioritised chase list ('+R.chase.length+')</h2><p class="s">Ranked by age, amount, gap type and escalations. People act on it; the tool never pays or closes anything.</p><button id="dc" class="p">Download (CSV)</button> <button id="br">AI daily brief</button><pre id="bo" class="hide"></pre>'+table([['priority','Priority'],['id','ID'],['agent','Agent'],['route','Route'],['amount','INR'],['age_days','Age (d)'],['category','Gap'],['escalations','Esc.'],['owner','Owner'],['next_action','Next action']],R.chase,100)+'</div>';$('dc').onclick=()=>csv('chase_list.csv',R.chase);
+  $('br').onclick=async()=>{const o=$('bo');o.classList.remove('hide');if(!aiOn()){o.textContent='Add your API key above first.';return}o.textContent='Writing brief...';
+   try{const f={refunds:s.n,closed_but_not_paid:s.closedNoPay,closed_no_finance_record:s.ghost,inr_at_risk:s.ghostInr,open_escalations:s.eOpen,top:R.chase.slice(0,10).map(c=>({id:c.id,agent:c.agent,inr:c.amount,age_days:c.age_days,gap:c.category,owner:c.owner,action:c.next_action}))};
+   o.textContent=await aiChat('You write a short daily brief for a Support and Finance sync at a travel company. Use ONLY the facts given. Max 6 bullet points, plain English, say who should do what first. Do not invent numbers.',JSON.stringify(f),500)}catch(err){o.textContent='AI failed: '+err.message}}}
+ if(tab==='Intake agent'){const ag=[...new Set(R.M.map(r=>r.agent).filter(Boolean))].sort();
+  v.innerHTML='<div class="card"><h2>Informal request in, tracker entry and reply out</h2><p class="s" id="aim"></p><button id="e1">Example: WhatsApp (Nomad Travel)</button> <button id="e2">Example: Email (Peak Journeys)</button><p><select id="ag">'+ag.map(a=>'<option>'+X(a)+'</option>').join('')+'</select></p><textarea id="tx" placeholder="Paste the message here"></textarea><p><button id="go" class="p">Process request</button></p><div id="out"></div></div>';
+  aiNote();const ex=(a,t)=>{$('ag').value=a;$('tx').value=t};
+  $('e1').onclick=()=>ex('Nomad Travel','Bhai refund ka kya hua? BLR-MAA wala. 2 hafte ho gaye, koi jawab nahi.');
+  $('e2').onclick=()=>ex('Peak Journeys','Hi, I cancelled booking for DEL-DXB last week and was told I’d get a refund. I haven’t received anything and I don’t have any reference number. Please help, my client is asking.');
+  $('go').onclick=async()=>{const t=$('tx').value,a=$('ag').value;if(!t.trim())return;let up=t.toUpperCase(),rm=up.match(/\b([A-Z]{3})\s*[-\/]\s*([A-Z]{3})\b/),route=rm?rm[1]+'-'+rm[2]:null,dm=t.toLowerCase().match(/(\d+)\s*(hafte|hafta|weeks?|din|days?)/),days=dm?(+dm[1])*(/^(haf|week)/.test(dm[2])?7:1):null,ri=up.match(/RF[\s-]?(\d{3,5})/),rid=ri?'RF-'+ri[1]:null,hing=/bhai|kya hua|wala|hafte|nahi|jawab|paisa|kab/i.test(t);
+   let mode='rules',note='';if(aiOn()){try{const x=jp(await aiChat('Extract refund-request details from a travel agent message (English, Hindi or Hinglish). Return ONLY a JSON object: {"route":"IATA-IATA or null","days_waiting":integer or null,"ref_id":"RF-#### or null","language":"English|Hindi|Hinglish","urgency":"low|medium|high","summary":"one short English sentence"}. Do not invent facts.',t,300));if(x.route&&/^[A-Za-z]{3}-[A-Za-z]{3}$/.test(x.route))route=x.route.toUpperCase();if(Number.isInteger(x.days_waiting))days=x.days_waiting;if(x.ref_id&&/^RF-\d{3,5}$/.test(x.ref_id))rid=x.ref_id;if(x.language)hing=x.language!=='English';mode='AI ('+PV[prov()].n+', '+curModel()+')'}catch(err){note='AI extraction failed ('+err.message+'); used rules instead.'}}
+   let mt=rid?R.M.filter(r=>r.id===rid):[];if(!mt.length){const all=R.M.filter(r=>r.agent===a&&(!route||r.route===route)),byD=(x,y)=>(y.req||0)-(x.req||0);mt=all.filter(r=>r.cat!=='E').sort(byD).concat(all.filter(r=>r.cat==='E').sort(byD))}
+   const nid='RF-'+(Math.max(...R.M.map(r=>+r.id.slice(3)))+1),info={route,days_waiting:days,ref_id:rid,language:hing?'Hinglish':'English',urgency:(days||0)>=10?'high':'medium'};
+   const paidTxt=r=>'was paid on '+(fd(r.f_proc)||'record date unavailable')+(r.f_paid!=null?'. Amount credited: INR '+r.f_paid:'')+(r.f_ded?' (after a deduction of INR '+r.f_ded+')':'')+(r.f_rem?'. Finance note: '+r.f_rem:'')+'. If it has not reached your bank account, please share your bank statement and we will trace it within 1 working day.';
+   const ST={E:'was paid and agreed by both teams.',A:'is marked closed on our side, but we could not find a payout record. We have escalated it to Finance and will update you within 1 working day.',B:'has been approved and is waiting for payout. We will confirm once released (target: 1 working day).',C:'was reviewed and declined by Finance. We will share the reason within 1 working day.',F:'is with Finance. We are completing our record and will update you within 1 working day.',D:'is being verified because the amounts differ between our teams.'};
+   let h='<p class="s">Extraction mode: '+X(mode)+' '+X(note)+'</p><h2>Extracted</h2><pre>'+X(JSON.stringify(info,null,1))+'</pre>',rep;
+   if(mt.length){const r=mt[0];h+='<h2>Possible match in the trackers</h2>'+(r.cat==='E'?'<p class="ok">This refund is already paid and agreed by both teams. The reply states the payment details.</p>':'')+(rid?'':'<p class="warn">Matched on agent and route only. Check the request date fits the message before sending.</p>')+table([['id','ID'],['route','Route'],['req','Requested',fd],['s_status','Support'],['f_status','Finance'],['category','Category'],['age','Age (d)']],mt,5);
+    rep='Hi '+a+' team, thank you for following up. Your refund request '+r.id+' ('+(r.route||'')+') '+(r.cat==='E'?paidTxt(r):(ST[r.cat]||'is still being processed. We will update you within 1 working day.'))+'\nReference: '+r.id+'.'}
+   else{h+='<p class="warn">No match in either tracker: this request was never logged. New entry created.</p>'+table([['a','Ticket ID'],['b','Agent'],['c','Route'],['d','Channel'],['e','Status']],[{a:nid,b:a,c:route||'',d:'WhatsApp/Email (informal)',e:'Working'}]);
+    rep='Hi '+a+' team, sorry for the delay. We could not find an earlier record of this request'+(route?' for '+route:'')+', so we have logged it now as '+nid+'. Please use this reference for any follow-up. We will update you within 1 working day.'}
+   if(aiOn()){try{const fact=mt.length?{status_text:mt[0].cat==='E'?paidTxt(mt[0]):(ST[mt[0].cat]||'is still being processed.'),ref:mt[0].id,route:mt[0].route}:{status_text:'no earlier record was found; a new reference was created',ref:nid,route:route};rep=await aiChat('You write short, polite refund status replies for a B2B travel company support team. Write 2 to 3 sentences to the travel agent '+a+'. Reply in '+(hing?'simple Hinglish':'English')+'. Use ONLY these facts, state the reference number, promise an update within 1 working day, and do not invent amounts, dates or reasons. Facts: '+JSON.stringify(fact),'Message from the agent: '+t,250)}catch(err){h+='<p class="warn">AI reply failed ('+X(err.message)+'); showing the template reply.</p>'}}
+   $('out').innerHTML=h+'<h2>Draft reply (a person reviews before sending)</h2><pre>'+X(rep)+'</pre>'}}}
+$('otb').onclick=async()=>{const o=$('otc'),L=[];const show=()=>{o.innerHTML=L.map(x=>X(x)).join('<br>')};
+ L.push('Page type: '+location.protocol+(window.origin==='null'?' (sandboxed or local file)':''));o.textContent='Testing...';
+ const hosts={openrouter:'https://openrouter.ai/api/v1/models',claude:'https://api.anthropic.com/',gemini:'https://generativelanguage.googleapis.com/',groq:'https://api.groq.com/openai/v1/models',mistral:'https://api.mistral.ai/'};
+ try{await fetch(hosts[prov()],{mode:'no-cors'});L.push('Network to '+PV[prov()].n+': reachable.')}
+ catch(e){L.push('Network to '+PV[prov()].n+': BLOCKED ('+e.message+').');L.push('Fix: open this file in a normal Chrome or Edge tab (not inside a chat or preview window), turn off ad blockers and VPN, and try another network.');show();return}
+ if(!aiOn()){L.push('Paste your key and press Test connection again to test the full call.');show();return}
+ try{const t=await aiChat('Reply with the single word OK.','ping',20);L.push('Full call: OK. The model replied: '+t.slice(0,30))}catch(e){L.push('Full call failed: '+e.message+(/high demand|overloaded|try again later|503/i.test(e.message)?' (the provider is busy, which is temporary. Wait a minute and press Test connection again, or switch provider above.)':/401|403|key/i.test(e.message)?' (check the key and provider).':/404|model|no longer available/i.test(e.message)?' (change the model name in the box above to the one the message suggests).':''))}show()};
+$('olb').onclick=async()=>{const o=$('otc');if(!aiOn()){o.textContent='Paste your key first.';return}o.textContent='Loading models...';try{const r=await loadModels();o.textContent='Found '+r.ids.length+' models. Selected: '+r.pick+'. Others you can type in the box: '+r.ids.filter(i=>i!==r.pick).slice(0,8).join(', ')}catch(e){o.textContent='Could not load models: '+e.message}};
+$('opv').onchange=()=>{setProv();healed[prov()]=false};$('ork').oninput=aiNote;$('orm').oninput=aiNote;setProv();
+$('f').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('msg').textContent='Reading '+f.name+'...';
+ try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:true});R=analyse(wb);$('msg').innerHTML='<span class="ok">Loaded '+X(f.name)+': '+R.sum.n+' refunds, '+R.sum.eTot+' escalations.</span>';$('app').classList.remove('hide');tab='Overview';draw()}
+ catch(err){$('app').classList.add('hide');$('msg').innerHTML='<span class="warn">Could not read this file: '+X(err.message)+'</span>'}};
+</script></body></html>
